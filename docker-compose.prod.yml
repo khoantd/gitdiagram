@@ -1,0 +1,44 @@
+# Production overrides for docker-compose.yml
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+
+services:
+  frontend:
+    # Override for production-specific settings
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      - SKIP_ENV_VALIDATION=false
+    # Production logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Security: run as non-root user (handled in Dockerfile)
+    user: "1001:1001"
+    # Network configuration
+    networks:
+      - gitdiagram-network
+
+  api:
+    # Override for production-specific settings
+    environment:
+      - ENVIRONMENT=production
+    # Production logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Network configuration
+    networks:
+      - gitdiagram-network
+
+# Production network configuration
+networks:
+  gitdiagram-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

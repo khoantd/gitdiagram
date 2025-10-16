@@ -45,6 +45,8 @@ You can also self-host this app locally (backend separated as well!) with the st
 
 ## 🛠️ Self-hosting / Local Development
 
+### Quick Start with Docker
+
 1. Clone the repository
 
 ```bash
@@ -52,21 +54,43 @@ git clone https://github.com/ahmedkhaleel2004/gitdiagram.git
 cd gitdiagram
 ```
 
-2. Install dependencies
-
-```bash
-pnpm i
-```
-
-3. Set up environment variables (create .env)
+2. Set up environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-Then edit the `.env` file with your Anthropic API key and optional GitHub personal access token.
+Edit the `.env` file with your required API keys:
+- `OPENAI_API_KEY` - Your OpenAI API key
+- `GITHUB_TOKEN` - Optional GitHub personal access token for private repos
+- `DATABASE_URL` - PostgreSQL connection string
+- `NEXT_PUBLIC_POSTHOG_KEY` - PostHog analytics key (optional)
 
-4. Run backend
+3. Start all services with Docker Compose
+
+```bash
+# Development mode (with hot-reload)
+docker-compose -f docker-compose.dev.yml up
+
+# Production mode
+docker-compose up
+```
+
+4. Access the application
+
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- API Documentation: http://localhost:8000/docs
+
+### Manual Development Setup
+
+1. Install dependencies
+
+```bash
+pnpm i
+```
+
+2. Run backend
 
 ```bash
 docker-compose up --build -d
@@ -75,7 +99,7 @@ docker-compose up --build -d
 Logs available at `docker-compose logs -f`
 The FastAPI server will be available at `localhost:8000`
 
-5. Start local database
+3. Start local database
 
 ```bash
 chmod +x start-database.sh
@@ -85,7 +109,7 @@ chmod +x start-database.sh
 When prompted to generate a random password, input yes.
 The Postgres database will start in a container at `localhost:5432`
 
-6. Initialize the database schema
+4. Initialize the database schema
 
 ```bash
 pnpm db:push
@@ -93,13 +117,264 @@ pnpm db:push
 
 You can view and interact with the database using `pnpm db:studio`
 
-7. Run Frontend
+5. Run Frontend
 
 ```bash
 pnpm dev
 ```
 
 You can now access the website at `localhost:3000` and edit the rate limits defined in `backend/app/routers/generate.py` in the generate function decorator.
+
+## 🚀 Production Deployment
+
+### Docker Deployment
+
+#### Option 1: Docker Compose (Recommended)
+
+1. **Prepare your server**
+```bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Docker and Docker Compose
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+sudo usermod -aG docker $USER
+
+# Install Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+```
+
+2. **Deploy the application**
+```bash
+# Clone repository
+git clone https://github.com/ahmedkhaleel2004/gitdiagram.git
+cd gitdiagram
+
+# Set up environment
+cp .env.example .env
+# Edit .env with your production values
+
+# Start production services
+docker-compose up -d
+
+# Check service health
+docker-compose ps
+docker-compose logs -f
+```
+
+3. **Configure reverse proxy (Nginx)**
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/ {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+#### Option 2: Docker Swarm
+
+```bash
+# Initialize swarm
+docker swarm init
+
+# Deploy stack
+docker stack deploy -c docker-compose.yml gitdiagram
+
+# Scale services
+docker service scale gitdiagram_frontend=3 gitdiagram_api=2
+```
+
+### Cloud Deployment
+
+#### Vercel (Frontend) + Railway/Render (Backend)
+
+1. **Frontend on Vercel**
+   - Connect your GitHub repository
+   - Set environment variables in Vercel dashboard
+   - Deploy automatically on push
+
+2. **Backend on Railway/Render**
+   - Connect your repository
+   - Set build command: `docker build -f backend/Dockerfile .`
+   - Configure environment variables
+   - Deploy
+
+#### AWS ECS/Fargate
+
+1. **Create ECS Cluster**
+```bash
+aws ecs create-cluster --cluster-name gitdiagram
+```
+
+2. **Build and push Docker images**
+```bash
+# Build images
+docker build -t gitdiagram-frontend .
+docker build -t gitdiagram-api ./backend
+
+# Tag for ECR
+docker tag gitdiagram-frontend:latest your-account.dkr.ecr.region.amazonaws.com/gitdiagram-frontend:latest
+docker tag gitdiagram-api:latest your-account.dkr.ecr.region.amazonaws.com/gitdiagram-api:latest
+
+# Push to ECR
+docker push your-account.dkr.ecr.region.amazonaws.com/gitdiagram-frontend:latest
+docker push your-account.dkr.ecr.region.amazonaws.com/gitdiagram-api:latest
+```
+
+3. **Create ECS Task Definitions and Services**
+
+### Environment Variables
+
+Create a `.env` file with the following variables:
+
+```env
+# Database
+DATABASE_URL=postgresql://username:password@host:port/database
+
+# GitHub Integration
+GITHUB_TOKEN=your_github_personal_access_token
+
+# AI Service
+OPENAI_API_KEY=your_openai_api_key
+
+# Analytics (Optional)
+NEXT_PUBLIC_POSTHOG_KEY=your_posthog_key
+NEXT_PUBLIC_POSTHOG_HOST=https://app.posthog.com
+
+# Environment
+NODE_ENV=production
+ENVIRONMENT=production
+```
+
+### Health Monitoring
+
+The application includes health checks:
+
+- **Frontend**: `GET /api/health`
+- **Backend**: `GET /health`
+
+Monitor with:
+```bash
+# Check service health
+curl http://localhost:3000/api/health
+curl http://localhost:8000/health
+
+# Docker health status
+docker-compose ps
+```
+
+### Scaling and Performance
+
+#### Horizontal Scaling
+```bash
+# Scale frontend instances
+docker-compose up --scale frontend=3
+
+# Scale backend instances
+docker-compose up --scale api=2
+```
+
+#### Load Balancing
+Use Nginx or Traefik for load balancing multiple instances.
+
+#### Database Optimization
+- Use connection pooling
+- Configure PostgreSQL for production
+- Set up database backups
+
+### Security Considerations
+
+1. **Environment Variables**
+   - Never commit `.env` files
+   - Use secrets management in production
+   - Rotate API keys regularly
+
+2. **Network Security**
+   - Use HTTPS in production
+   - Configure firewall rules
+   - Implement rate limiting
+
+3. **Container Security**
+   - Run containers as non-root users
+   - Keep base images updated
+   - Scan for vulnerabilities
+
+### Backup and Recovery
+
+#### Database Backup
+```bash
+# Create backup
+docker exec gitdiagram_postgres pg_dump -U username database_name > backup.sql
+
+# Restore backup
+docker exec -i gitdiagram_postgres psql -U username database_name < backup.sql
+```
+
+#### Application Backup
+```bash
+# Backup application data
+docker-compose exec frontend tar -czf /backup/app-data.tar.gz /app/data
+```
+
+### Troubleshooting
+
+#### Common Issues
+
+1. **Services won't start**
+```bash
+# Check logs
+docker-compose logs -f
+
+# Check resource usage
+docker stats
+
+# Restart services
+docker-compose restart
+```
+
+2. **Database connection issues**
+```bash
+# Check database status
+docker-compose exec postgres psql -U username -d database_name -c "SELECT 1;"
+```
+
+3. **Memory issues**
+```bash
+# Check memory usage
+docker stats
+
+# Adjust resource limits in docker-compose.yml
+```
+
+#### Logs and Monitoring
+```bash
+# View all logs
+docker-compose logs -f
+
+# View specific service logs
+docker-compose logs -f frontend
+docker-compose logs -f api
+
+# Follow logs in real-time
+docker-compose logs -f --tail=100
+```
 
 ## Contributing
 

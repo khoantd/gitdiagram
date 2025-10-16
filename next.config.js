@@ -7,6 +7,8 @@ import "./src/env.js";
 /** @type {import("next").NextConfig} */
 const config = {
   reactStrictMode: false,
+  // Enable standalone output for Docker production builds
+  output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
   async rewrites() {
     return [
       {
